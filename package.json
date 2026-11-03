@@ -1,0 +1,15 @@
+{
+  "name": "parallel-atlas",
+  "version": "1.0.0",
+  "private": true,
+  "description": "An interactive browser-based atlas for large language model inference parallelism.",
+  "license": "MIT",
+  "scripts": {
+    "start": "node scripts/serve.cjs",
+    "test": "node --test engine.test.cjs models.test.cjs hardware.test.cjs",
+    "check": "node --check app.js && node --check engine.js && node --check models.js && node --check hardware.js && node --check scripts/serve.cjs"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

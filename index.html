@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f6f7fb">
+  <meta name="description" content="交互探索大模型推理并行：逐卡 Attention、MoE 权重、KV Cache 与通信组。支持 TP / PP / DP / EP / CP / PCP / DCP。">
+  <title>Parallel Atlas · 大模型并行实验台</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%236d5ce7'/%3E%3Cpath d='M16 21h14v14H16zm18 8h14v14H34z' fill='none' stroke='white' stroke-width='4'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="styles.css">
+  <script src="engine.js" defer></script>
+  <script src="models.js" defer></script>
+  <script src="hardware.js" defer></script>
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <aside class="rail" aria-label="主导航">
+    <a class="brand-mark" href="#" aria-label="Parallel Atlas 首页"><span>▧</span></a>
+    <button class="rail-button active" id="nav-explore" title="并行实验台" aria-label="并行实验台">▦</button>
+    <button class="rail-button" id="nav-guide" title="策略说明" aria-label="策略说明">◈</button>
+    <div class="rail-spacer"></div>
+    <a class="rail-button github-icon" href="https://github.com/Toneymiller/parallel-atlas" target="_blank" rel="noopener" title="GitHub 源码" aria-label="GitHub 源码">⌘</a>
+    <span class="rail-version">v1.0</span>
+  </aside>
+  <div class="workspace">
+    <header class="topbar">
+      <div class="wordmark">Parallel<span>Atlas</span><span class="top-divider"></span><span class="product-name">大模型并行实验台</span></div>
+      <div class="top-actions"><span class="local-badge"><i></i> 纯浏览器计算</span><button class="button subtle" id="guide-button">策略指南 <span>↗</span></button><a class="button subtle" href="https://github.com/Toneymiller/parallel-atlas" target="_blank" rel="noopener">GitHub ↗</a></div>
+    </header>
+    <div class="app-layout">
+      <aside class="config-panel">
+        <div class="config-heading"><div><span class="eyebrow">WORKSPACE</span><h2>实验配置</h2></div><button class="icon-button" id="reset-button" title="恢复默认配置" aria-label="恢复默认配置">↺</button></div>
+        <label class="field-label" for="preset-select">从一个并行方案开始 <span>PRESET</span></label>
+        <select id="preset-select" class="preset-select"></select>
+        <p id="preset-description" class="helper"></p>
+        <form id="config-form" novalidate>
+          <section class="form-section"><div class="section-label"><span class="step-number">01</span><h3>并行布局</h3><span class="section-tag">PARALLEL</span></div>
+            <label class="field-label" for="profile">语义模式</label><select id="profile" name="profile"><option value="generic">通用 · 逻辑并行模型</option><option value="vllm-ascend">vLLM Ascend · CP / EP 约束</option></select>
+            <div class="parallel-fields" id="parallel-fields"></div>
+            <label class="switch-row"><span>序列并行 <b>SP</b></span><input type="checkbox" id="sp" name="sp"><span class="switch-ui"></span></label>
+            <div class="formula" id="world-formula"></div>
+          </section>
+          <details class="form-section" open><summary><span class="step-number">02</span><h3>模型结构</h3><span class="summary-chevron">⌄</span></summary><div class="details-content">
+            <label class="field-label" for="model-select">开源模型 <span>MODEL LIBRARY</span></label><select id="model-select"><option value="custom">自定义模型结构</option></select><div id="model-source" class="model-source"></div>
+            <label class="field-label" for="modelName">配置名称</label><input id="modelName" name="modelName" maxlength="120">
+            <div class="two-fields" id="model-fields"></div>
+            <label class="field-label" for="precision">权重精度</label><select name="precision" id="precision"><option value="bf16">BF16 · 2 bytes</option><option value="fp16">FP16 · 2 bytes</option><option value="int8">INT8 · 1 byte</option><option value="int4">INT4 · 0.5 byte</option></select>
+          </div></details>
+          <details class="form-section"><summary><span class="step-number">03</span><h3>请求与硬件</h3><span class="summary-chevron">⌄</span></summary><div class="details-content"><label class="field-label" for="hardware-select">加速器硬件 <span>HARDWARE</span></label><select id="hardware-select"><option value="custom">自定义硬件预算</option></select><div id="hardware-source" class="model-source"></div><div class="two-fields" id="runtime-fields"></div></div></details>
+          <details class="form-section"><summary><span class="step-number">04</span><h3>高级设置</h3><span class="summary-chevron">⌄</span></summary><div class="details-content">
+            <label class="field-label" for="attentionType">Attention 结构</label><select id="attentionType" name="attentionType"><option value="gqa">MHA / GQA / MQA</option><option value="mla">MLA · 压缩 KV</option><option value="unmodeled">特殊 / 混合注意力 · 部分估算</option></select>
+            <label class="field-label" for="expertPlacement">专家放置</label><select id="expertPlacement" name="expertPlacement"><option value="contiguous">连续分配</option><option value="round-robin">轮转分配</option></select>
+            <label class="field-label" for="moeLayerPlacement">MoE 层位置</label><select id="moeLayerPlacement" name="moeLayerPlacement"><option value="uniform">均匀分布</option><option value="trailing">前置 Dense，后续 MoE</option></select>
+            <label class="field-label" for="kvPrecision">KV Cache 精度</label><select id="kvPrecision" name="kvPrecision"><option value="bf16">BF16</option><option value="fp16">FP16</option><option value="int8">INT8</option></select>
+            <div class="two-fields" id="advanced-fields"></div>
+          </div></details>
+        </form>
+        <div class="config-footer"><button class="button" id="import-button">↥ 导入 JSON</button><button class="button" id="export-button">↧ 导出配置</button><input type="file" id="import-file" accept=".json,application/json" hidden></div>
+        <p class="privacy-note">配置保留在当前浏览器，无需上传模型。</p>
+      </aside>
+      <main class="main-content">
+        <div class="page-heading"><div><div class="eyebrow"><span class="purple-line"></span> INFERENCE TOPOLOGY EXPLORER</div><h1>让并行策略，<span>清晰可见。</span></h1><p>从一组参数，探索每张卡的权重、上下文与通信路径。</p></div><button class="button" id="share-button">↗ 分享配置</button></div>
+        <div class="metrics" id="metrics"></div>
+        <div id="validation" aria-live="polite"></div>
+        <div class="visualization-layout">
+          <div class="center-column">
+            <section class="panel topology-panel">
+              <div class="panel-header"><div class="view-tabs" role="tablist" aria-label="可视化视图"><button role="tab" aria-selected="true" data-view="topology" class="view-tab active">集群拓扑</button><button role="tab" aria-selected="false" data-view="weights" class="view-tab">权重分布</button><button role="tab" aria-selected="false" data-view="matrix" class="view-tab">通信矩阵</button></div><div class="canvas-actions"><button class="icon-button" id="fit-button" aria-label="重置缩放" title="重置缩放">⊡</button><div class="download-wrap"><button class="button compact" id="download-button">↓ 下载图片</button><div id="download-menu" class="dropdown" hidden><button data-export="png">PNG · 高清图片</button><button data-export="svg">SVG · 矢量图</button></div></div></div></div>
+              <div class="canvas-toolbar"><div class="phase-control" aria-label="推理阶段"><button data-phase="prefill" class="active">Prefill</button><button data-phase="decode">Decode</button></div><div class="toolbar-right"><label for="layer-select">层</label><select id="layer-select" aria-label="查看模型层"></select><label class="animation-toggle" title="动画只表示通信方向，不代表实测速度"><input type="checkbox" id="animate-toggle" checked> 流向动画</label></div></div>
+              <div id="group-filters" class="group-filters" aria-label="通信组筛选"></div>
+              <div class="canvas-viewport" id="canvas-viewport"><div id="canvas-content"></div></div>
+              <div class="canvas-footer"><span id="canvas-caption"></span><div class="zoom-control"><button id="zoom-out" aria-label="缩小">−</button><span id="zoom-value">100%</span><button id="zoom-in" aria-label="放大">＋</button></div></div>
+            </section>
+            <section class="panel communication-panel"><div class="section-header"><div><span class="mini-icon">⇄</span><h2>通信关系</h2><span class="count-pill" id="group-count">0</span></div><span class="muted small">点击通信组，高亮参与卡片</span></div><div id="communication-list"></div></section>
+            <section class="panel comparison-panel"><div class="section-header"><div><span class="mini-icon">◫</span><h2>方案对比</h2></div><button class="button compact" id="baseline-button">＋ 将当前配置设为基线</button></div><div id="comparison-content" class="comparison-content">保存一个基线，再调整并行参数，观察卡数与显存的变化。</div></section>
+          </div>
+          <aside class="inspector-column"><section class="panel inspector-panel"><div class="section-header"><div><span class="mini-icon">▣</span><h2>单卡透视</h2></div><span class="live-dot"></span></div><div id="card-inspector"></div></section><section class="panel notes-panel"><div class="section-header"><div><span class="mini-icon">◈</span><h2>配置洞察</h2></div></div><div id="insights"></div></section></aside>
+        </div>
+        <footer class="main-footer"><span><b>Parallel Atlas</b> · 理解分布式推理的每一张卡</span><span>逻辑分布模拟 · 显存为估算值 <button class="text-button" id="assumptions-button">查看计算口径 ↗</button></span></footer>
+      </main>
+    </div>
+  </div>
+  <dialog id="guide-dialog"><div class="dialog-header"><div><div class="eyebrow">PARALLELISM HANDBOOK</div><h2>理解每一种并行</h2></div><button class="icon-button" id="close-guide" aria-label="关闭策略指南">×</button></div><div id="guide-content"></div></dialog>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+</body>
+</html>
