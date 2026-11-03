@@ -19,12 +19,19 @@ test('hardware presets load offline in browsers and CommonJS', () => {
 test('hardware catalog has immutable dated manufacturer provenance and editable engine inputs', () => {
   assert.equal(H.SNAPSHOT_DATE, '2026-11-03');
   const ids = new Set();
-  const officialHosts = new Set(['www.nvidia.com', 'docs.nvidia.com', 'e.huawei.com', 'www.hiascend.com', 'docs.vllm.ai']);
+  const officialHosts = new Set(['www.nvidia.com', 'docs.nvidia.com', 'e.huawei.com', 'www.hiascend.com', 'docs.vllm.ai', 'www.dell.com']);
   for (const hardware of H.HARDWARE) {
     assert.ok(!ids.has(hardware.id)); ids.add(hardware.id);
     assert.ok(['Huawei', 'NVIDIA'].includes(hardware.vendor));
-    assert.ok(Number.isInteger(hardware.memoryGB) && hardware.memoryGB > 0);
-    assert.ok(Number.isInteger(hardware.gpusPerNode) && hardware.gpusPerNode > 0);
+    if (hardware.status === 'unverified') {
+      assert.equal(hardware.memoryGB, null);
+      assert.equal(hardware.gpusPerNode, null);
+      assert.equal(hardware.budgetOnly, true);
+      assert.match(hardware.name, /待核实/);
+    } else {
+      assert.ok(Number.isInteger(hardware.memoryGB) && hardware.memoryGB > 0);
+      assert.ok(Number.isInteger(hardware.gpusPerNode) && hardware.gpusPerNode > 0);
+    }
     assert.ok(Object.isFrozen(hardware) && Object.isFrozen(hardware.notes) && Object.isFrozen(hardware.sources));
     assert.ok(hardware.sources.some(source => source.url === hardware.source));
     for (const source of hardware.sources) {
@@ -32,12 +39,14 @@ test('hardware catalog has immutable dated manufacturer provenance and editable 
       assert.equal(new URL(source.url).protocol, 'https:');
       assert.ok(Object.isFrozen(source));
     }
-    assert.ok(hardware.notes.some(note => note.includes('标称 GB') && note.includes('GiB') && note.includes('实际可用')));
-    const config = E.normalizeConfig({ ...E.DEFAULT_CONFIG, memoryGB: hardware.memoryGB, gpusPerNode: hardware.gpusPerNode });
-    assert.equal(config.memoryGB, hardware.memoryGB);
-    assert.equal(config.gpusPerNode, hardware.gpusPerNode);
+    if (hardware.status !== 'unverified') {
+      assert.ok(hardware.notes.some(note => note.includes('GiB') && note.includes('实际可用')));
+      const config = E.normalizeConfig({ ...E.DEFAULT_CONFIG, memoryGB: hardware.memoryGB, gpusPerNode: hardware.gpusPerNode });
+      assert.equal(config.memoryGB, hardware.memoryGB);
+      assert.equal(config.gpusPerNode, hardware.gpusPerNode);
+    }
   }
-  assert.equal(ids.size, 7);
+  assert.equal(ids.size, 10);
   assert.ok(Object.isFrozen(H.HARDWARE));
 });
 
@@ -68,4 +77,25 @@ test('consumer GPU node count is explicitly a simulator default', () => {
   const rtx = H.getHardware('rtx-4090-24gb');
   assert.equal(rtx.memoryGB, 24);
   assert.ok(rtx.notes.some(note => note.includes('布局默认值') && note.includes('非 RTX 4090 产品规格')));
+});
+
+test('950DT uses the verified Atlas 650E variant while 950Server has no invented logical specifications', () => {
+  const dt = H.getHardware('ascend-950dt-96gb');
+  assert.deepEqual([dt.memoryGB, dt.gpusPerNode], [96, 8]);
+  assert.match(dt.name, /Atlas 650E/);
+  assert.ok(dt.notes.some(note => note.includes('144 GB') && note.includes('不同产品规格')));
+  const server = H.getHardware('ascend-950server');
+  assert.equal(server.status, 'unverified');
+  assert.equal(server.memoryGB, null);
+  assert.equal(server.gpusPerNode, null);
+  assert.ok(server.notes.some(note => note.includes('保留当前自定义')));
+});
+
+test('H20 uses nominal 96 GB and an eight-GPU OEM reference node', () => {
+  const h20 = H.getHardware('h20-96gb-sxm');
+  assert.deepEqual([h20.memoryGB, h20.gpusPerNode], [96, 8]);
+  assert.equal(h20.capacityUnit, undefined);
+  assert.match(h20.source, /nim\/large-language-models\/1\.15\.0\/supported-models\.html$/);
+  assert.ok(h20.sources.some(source => new URL(source.url).hostname === 'www.dell.com'));
+  assert.ok(h20.notes.some(note => note.includes('标称 GB') && note.includes('GiB') && note.includes('未作十进制/二进制换算')));
 });

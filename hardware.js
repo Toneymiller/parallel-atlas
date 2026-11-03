@@ -1,4 +1,4 @@
-/* Official capacity/topology snapshots, verified 2026-11-03. No live requests. */
+/* Dated hardware references; unverified entries never supply invented capacities. No live requests. */
 (function (root, factory) {
   'use strict';
   const api = factory();
@@ -42,6 +42,28 @@
       ]
     },
     {
+      id: 'ascend-950dt-96gb', name: 'Huawei Ascend 950DT · 96 GB / NPU · Atlas 650E', vendor: 'Huawei',
+      memoryGB: 96, gpusPerNode: 8, unitLabel: 'NPU 容量单元', status: 'verified',
+      source: 'https://www.hiascend.com/hardware/ai-server',
+      sources: [{ title: '华为 Atlas 650E：8 × 昇腾950DT、8 × 96 GB HBM', url: 'https://www.hiascend.com/hardware/ai-server' }],
+      notes: [
+        '选用 Atlas 650E 已公开的具体版本：单机 8 颗昇腾950DT、8 × 96 GB HBM，总计 768 GB；每节点按 8 个容量单元建模。',
+        '该映射未推断虚拟化或软件设备拆分；若实际逻辑设备数和每设备容量不同，请按 npu-smi 结果修改。',
+        '950DT 存在不同产品规格；此处 96 GB 不等同于早期芯片路线图的 144 GB，不应套用到所有 950DT 系统。',
+        nominalCapacityNote
+      ]
+    },
+    {
+      id: 'ascend-950server', name: 'Huawei 950Server · 规格待核实', vendor: 'Huawei',
+      memoryGB: null, gpusPerNode: null, unitLabel: 'NPU 逻辑设备（待核实）', status: 'unverified', budgetOnly: true,
+      source: 'https://www.hiascend.com/hardware/ai-server',
+      sources: [{ title: '华为公开服务器目录：Atlas 650E 等正式产品名称', url: 'https://www.hiascend.com/hardware/ai-server' }],
+      notes: [
+        '950Server 对应的正式产品型号、单逻辑设备容量与节点设备数尚待核实；选择后保留当前自定义容量与节点预算，请按实机修改。',
+        'Atlas 650E 的公开 8 × 96 GB HBM 配置可选择 Ascend 950DT · Atlas 650E 条目。'
+      ]
+    },
+    {
       id: 'a100-80gb-sxm', name: 'NVIDIA A100 SXM · 80 GB', vendor: 'NVIDIA',
       memoryGB: 80, gpusPerNode: 8, unitLabel: 'GPU',
       source: 'https://www.nvidia.com/en-gb/data-center/a100/',
@@ -52,6 +74,20 @@
       id: 'h100-80gb-sxm', name: 'NVIDIA H100 SXM · 80 GB', vendor: 'NVIDIA',
       memoryGB: 80, gpusPerNode: 8, unitLabel: 'GPU', source: hgxSource.url, sources: [hgxSource],
       notes: ['选用 H100 SXM 的 80 GB HBM3 版本；节点采用官方 HGX 8-GPU 参考配置，可按实际系统修改。', nominalCapacityNote]
+    },
+    {
+      id: 'h20-96gb-sxm', name: 'NVIDIA H20 SXM5 · 96 GB', vendor: 'NVIDIA',
+      memoryGB: 96, gpusPerNode: 8, unitLabel: 'GPU', status: 'verified',
+      source: 'https://docs.nvidia.com/nim/large-language-models/1.15.0/supported-models.html',
+      sources: [
+        { title: 'NVIDIA NIM for LLMs：H20 的标称 Memory 为 96 GB', url: 'https://docs.nvidia.com/nim/large-language-models/1.15.0/supported-models.html' },
+        { title: 'Dell PowerEdge XE9680 GPU 规格：8 个 HGX H20 96 GB SXM5 GPU', url: 'https://www.dell.com/support/manuals/en-my/poweredge-xe9680/xe9680_ism_pub/gpu-specifications?guid=guid-1f91b9fb-b8fd-492e-863f-45febc9355c6&lang=en-us' }
+      ],
+      notes: [
+        '选用 H20 SXM5 96 GB 版本；单机按 Dell PowerEdge XE9680 官方列出的 8 GPU 配置预设，可按实际系统修改。',
+        'H20 也有其他容量版本；此处明确为 96 GB 版本，不与 H200 或其他 H20 版本混用。',
+        nominalCapacityNote
+      ]
     },
     {
       id: 'h200-141gb-sxm', name: 'NVIDIA H200 SXM · 141 GB', vendor: 'NVIDIA',

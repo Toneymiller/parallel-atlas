@@ -71,19 +71,24 @@ GQA 条目中的 MLA latent / RoPE 字段，以及 Dense 条目中的 MoE FFN di
 
 ## 选择硬件
 
-“请求与硬件”区域内置以下预设，规格核验日期为 **2026-11-03**。硬件选择填入容量预算和节点设备数；可以直接修改这两个值，也可以选择自定义硬件。预设影响容量比较与 rank 的逻辑节点分组，不模拟硬件算力、互联带宽或实际延迟。
+“请求与硬件”区域内置以下条目，公开规格核验日期为 **2026-11-03**。已核实的硬件选择填入容量预算和节点设备数；可以直接修改这两个值，也可以选择自定义硬件。950Server 单独标记为规格待核实，选择时保留当前容量与节点输入。预设影响容量比较与 rank 的逻辑节点分组，不模拟硬件算力、互联带宽或实际延迟。
 
 | 硬件 / 官方来源 | 单设备标称容量 | 每节点默认设备数 |
 | --- | --- | --- |
 | [Huawei Atlas 800T A2](https://www.hiascend.com/doc_center/source/zh/HDK/2610/A2/A2DCMI/dcmi_050.html) | 64 GB | 8 个 NPU 设备 |
 | [Huawei Atlas 800T A3 · 软件部署口径](https://docs.vllm.ai/projects/ascend/en/v0.26.0rc1/tutorials/features/dynamic_chunked_pipeline_parallel.html) | 64 GB / 逻辑 NPU | 16 个逻辑 NPU 设备 |
+| [Huawei Ascend 950DT · Atlas 650E 配置](https://www.hiascend.com/hardware/ai-server) | 96 GB / NPU | 8 个 NPU（整机 768 GB HBM） |
+| Huawei 950Server · 规格待核实 | 沿用当前输入 | 沿用当前输入；没有填入推测规格 |
 | [NVIDIA A100 SXM](https://www.nvidia.com/en-gb/data-center/a100/) | 80 GB | 8 个 GPU（DGX 参考布局） |
 | [NVIDIA H100 SXM](https://docs.nvidia.com/enterprise-reference-architectures/hgx-ai-factory-h100-h200-b200/latest/components.html) | 80 GB | 8 个 GPU（HGX 参考布局） |
+| [NVIDIA H20 SXM5](https://docs.nvidia.com/nim/large-language-models/1.15.0/supported-models.html) | 96 GB | 8 个 GPU（[Dell PowerEdge XE9680 参考布局](https://www.dell.com/support/manuals/en-my/poweredge-xe9680/xe9680_ism_pub/gpu-specifications?guid=guid-1f91b9fb-b8fd-492e-863f-45febc9355c6&lang=en-us)） |
 | [NVIDIA H200 SXM](https://docs.nvidia.com/enterprise-reference-architectures/hgx-ai-factory-h100-h200-b200/latest/components.html) | 141 GB | 8 个 GPU（HGX 参考布局） |
 | [NVIDIA B200 SXM](https://docs.nvidia.com/enterprise-reference-architectures/hgx-ai-factory-h100-h200-b200/latest/components.html) | 180 GB | 8 个 GPU（HGX 参考布局） |
 | [NVIDIA GeForce RTX 4090](https://www.nvidia.com/en-au/geforce/graphics-cards/40-series/rtx-4090/) | 24 GB | 8 个 GPU（工具默认，可修改） |
 
 Atlas 800T A3 的 **16 × 64 GB 是软件可见逻辑设备口径**；[华为产品规格](https://e.huawei.com/cn/products/computing/ascend/atlas-800t-a3)的物理口径为 8 颗昇腾 910、8 × 128 GB HBM。本工具的 16 个 rank 设备不表示 16 颗物理处理器或 16 张物理卡，也未描述处理器内部互联。A2 的 8 设备布局另见[华为 MindCluster 节点说明](https://www.hiascend.com/document/detail/zh/mindcluster/60rc3/clustersched/reference/api/dlug_api_055.html)。RTX 4090 的每节点 8 设备是可编辑布局默认值，不是产品保证的服务器配置。
+
+950DT 条目具体对应当前官方 Atlas 650E 的 **8 × 96 GB HBM** 配置，不能把整个 950DT 系列视作统一容量。[华为此前公开路线图](https://www.huawei.com/en/news/2025/9/hc-xu-keynote-speech)也描述过 144 GB 的 950DT 芯片规格；本预设没有把该规格套入 650E。**950Server 尚未核实到对应的独立官方型号与精确容量**，保留为待核实条目供手动设置；它不表示已确认等同 Atlas 650E，也不采用鲲鹏 / TaiShan 950 的 CPU 系统内存作为 NPU HBM。H20 选用 96 GB 版本，不混用其他可能的容量款型；每节点数量仍可按实际服务器修改。
 
 **单位口径：**硬件预设把厂商标称 GB 数字近似填入本工具的 GiB 输入，未做十进制 / 二进制换算。容量输入按 `1024³` 字节计算，因此预设不是精确的可用显存测量；系统、驱动和框架也会预留内存，请按实际可用容量调整预算。
 
