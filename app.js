@@ -102,6 +102,7 @@
     renderAll();
   }
   function renderAll() {
+    $('model-summary').textContent = `${config.modelName} · ${currentModel()?.attentionDescription || '探索每张卡的权重、上下文与通信路径。'}`;
     renderMetrics(); renderValidation(); renderFilters(); renderCanvas(); renderCommunications(); renderInspector(); renderInsights(); renderComparison();
     $('world-formula').textContent = result.valid ? `${result.stats.formula} = ${result.worldSize} devices` : '请调整参数以生成有效布局';
     $('download-button').disabled = !result.valid;
