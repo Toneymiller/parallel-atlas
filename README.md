@@ -46,11 +46,11 @@ npm start
 | [MiniMax-M3](https://huggingface.co/MiniMaxAI/MiniMax-M3/raw/main/config.json) | 60 | 6144 | 128 / 4 | 3 GQA + 57 MSA，GQA 投影代理 |
 | [MiniMax-M3.1-Flash](https://huggingface.co/MiniMaxAI/MiniMax-M3.1-Flash/raw/main/config.json) | 60 | 6144 | 128 / 4 | 60 MSA，部分估算；[2026-10-19 发布](https://www.minimax.io/blog/minimax-m31f) |
 
-**部分估算的含义：**GLM-5.3-Flash、DeepSeek V4 / V4.1、Kimi-K3 和 MiniMax-M3.1-Flash 保留已核验的层、专家、FFN 和词表结构；Attention 权重、KV / 线性注意力状态以及尚未支持的专有模块均排除。界面中的“未计入”或零值不表示这些模块不存在，合计仅为已建模部分的结构估算，不能用于证明完整模型可装入显存。CP / PCP / DCP 只显示候选逻辑参与组，实际算子、状态布局与部署支持仍需对照后端验证。
+**部分估算的含义：**GLM-5.3-Flash、DeepSeek V4 / V4.1、Kimi-K3 和 MiniMax-M3.1-Flash 保留已核验的层、专家、FFN 和词表结构；Attention 权重、KV / 线性注意力状态以及尚未支持的专有模块均排除。界面中的“未计入”或零值不表示这些模块不存在，合计仅为已建模部分的结构估算，不能用于证明完整模型可装入显存。未建模的 Attention 通信组、token 切分与缓存布局不展示。
 
 GLM-5.2 / GLM-5.3 保留前三层 Dense、75 层 MoE，以及每层一个共享专家；有效 QK head dim 为 `192 + 64 = 256`。MLA KV 按 `512 latent + 64 RoPE` 近似，Attention 使用展开投影代理，低秩路径与共享稀疏索引器尚未精确建模。MiniMax-M3 的稀疏 Attention 使用 GQA 投影代理，缓存按完整 GQA 序列估算，不表示 MSA 的真实缓存布局；两个 MiniMax 版本均保留前三层 Dense FFN 与后续 57 层 MoE。
 
-DeepSeek V4 的主干全部为 MoE，前三个 MoE 层采用 Hash Router，常规 Router 矩阵省略，Hash 表本身未计入；V4.1 配置没有声明该规则，因此没有沿用。V4.1 的 Engram 条件记忆（官方约 196B 参数）、视觉与草稿模块也未计入。Kimi-K3 的路由专家使用实际 `3584` 维输入 / 输出，共享专家使用 `7168` 维，额外适配投影单独近似；其官方从 1 开始的 Attention 层号已转换为页面的 0-based 层号。所有条目的详细说明可在模型来源区域查看。
+DeepSeek V4 的主干全部为 MoE，前三个 MoE 层采用 Hash Router，但仍保留路由评分矩阵；Hash 表本身未计入。V4.1 配置没有声明该规则，因此没有沿用。V4.1 的 Engram 条件记忆（官方约 196B 参数）、视觉与草稿模块也未计入。Kimi-K3 的路由专家使用实际 `3584` 维输入 / 输出，共享专家使用 `7168` 维，额外适配投影单独近似；其官方从 1 开始的 Attention 层号已转换为页面的 0-based 层号。所有条目的详细说明可在模型来源区域查看。
 
 旧版参考模型继续保留：
 
@@ -65,30 +65,29 @@ DeepSeek V4 的主干全部为 MoE，前三个 MoE 层采用 Hash Router，常�
 
 旧版 DeepSeek-V3 和 GLM-4.5 均保留前三层 Dense 与每个 MoE 层的一个共享专家。Qwen3 MoE 模型没有共享专家。显式 `head_dim` 或具体 Attention 的有效投影维度按官方结构读取，不能用 `hidden_size / num_attention_heads` 替代。
 
-模型条目使用 BF16 权重与 BF16 KV 作为可调分析起点；部分估算条目的 KV 仍排除。多个模型的官方 checkpoint 使用 FP8 / FP4 / MXFP4 / NVFP4 等混合量化，BF16 起点不复现这些发布文件的实际占用。旧版 DeepSeek-V3 的 MLA KV 使用 `512 latent + 64 RoPE`，Attention 权重为展开投影近似：QK head dim 取 `128 + 64 = 192`，实际 V head dim 为 `128`，低秩投影没有精确建模。额外 MTP、草稿、视觉及其他辅助模块以各条目的排除说明为准。
+界面使用 BF16 权重与 BF16 KV 作为可调分析起点；部分估算条目的 KV 仍排除。多个模型的官方 checkpoint 使用混合量化，BF16 起点不复现这些发布文件的实际占用。旧版 DeepSeek-V3 的 MLA KV 使用 `512 latent + 64 RoPE`，Attention 权重为展开投影近似：QK head dim 取 `128 + 64 = 192`，实际 V head dim 为 `128`，低秩投影没有精确建模。额外 MTP、草稿、视觉及其他辅助模块以各条目的排除说明为准。
 
-GQA 条目中的 MLA latent / RoPE 字段，以及 Dense 条目中的 MoE FFN dim，是未启用的界面占位值，不参与对应模型估算。DeepSeek V4 / V4.1 官方没有提供的 Dense FFN / latent 字段也仅作未启用占位，不能当作官方参数。模型选择提供结构起点；已有并行参数仍需通过校验，容量警告也需结合实际部署条件解读。
+模型目录仅保存有来源依据的结构参数；界面隐藏不适用的字段，导出配置也不附带这些未启用的默认值。模型选择提供结构起点；已有并行参数仍需通过校验，容量警告也需结合实际部署条件解读。
 
 ## 选择硬件
 
-“请求与硬件”区域内置以下条目，公开规格核验日期为 **2026-11-03**。已核实的硬件选择填入容量预算和节点设备数；可以直接修改这两个值，也可以选择自定义硬件。950Server 单独标记为规格待核实，选择时保留当前容量与节点输入。预设影响容量比较与 rank 的逻辑节点分组，不模拟硬件算力、互联带宽或实际延迟。
+“请求与硬件”区域内置以下 9 项有公开来源的配置，规格核验日期为 **2026-11-03**。硬件选择填入容量预算和节点设备数；可以直接修改这两个值，也可以选择自定义硬件。预设影响容量比较与 rank 的逻辑节点分组，不模拟硬件算力、互联带宽或实际延迟。
 
 | 硬件 / 官方来源 | 单设备标称容量 | 每节点默认设备数 |
 | --- | --- | --- |
 | [Huawei Atlas 800T A2](https://www.hiascend.com/doc_center/source/zh/HDK/2610/A2/A2DCMI/dcmi_050.html) | 64 GB | 8 个 NPU 设备 |
 | [Huawei Atlas 800T A3 · 软件部署口径](https://docs.vllm.ai/projects/ascend/en/v0.26.0rc1/tutorials/features/dynamic_chunked_pipeline_parallel.html) | 64 GB / 逻辑 NPU | 16 个逻辑 NPU 设备 |
 | [Huawei Ascend 950DT · Atlas 650E 配置](https://www.hiascend.com/hardware/ai-server) | 96 GB / NPU | 8 个 NPU（整机 768 GB HBM） |
-| Huawei 950Server · 规格待核实 | 沿用当前输入 | 沿用当前输入；没有填入推测规格 |
 | [NVIDIA A100 SXM](https://www.nvidia.com/en-gb/data-center/a100/) | 80 GB | 8 个 GPU（DGX 参考布局） |
 | [NVIDIA H100 SXM](https://docs.nvidia.com/enterprise-reference-architectures/hgx-ai-factory-h100-h200-b200/latest/components.html) | 80 GB | 8 个 GPU（HGX 参考布局） |
 | [NVIDIA H20 SXM5](https://docs.nvidia.com/nim/large-language-models/1.15.0/supported-models.html) | 96 GB | 8 个 GPU（[Dell PowerEdge XE9680 参考布局](https://www.dell.com/support/manuals/en-my/poweredge-xe9680/xe9680_ism_pub/gpu-specifications?guid=guid-1f91b9fb-b8fd-492e-863f-45febc9355c6&lang=en-us)） |
 | [NVIDIA H200 SXM](https://docs.nvidia.com/enterprise-reference-architectures/hgx-ai-factory-h100-h200-b200/latest/components.html) | 141 GB | 8 个 GPU（HGX 参考布局） |
 | [NVIDIA B200 SXM](https://docs.nvidia.com/enterprise-reference-architectures/hgx-ai-factory-h100-h200-b200/latest/components.html) | 180 GB | 8 个 GPU（HGX 参考布局） |
-| [NVIDIA GeForce RTX 4090](https://www.nvidia.com/en-au/geforce/graphics-cards/40-series/rtx-4090/) | 24 GB | 8 个 GPU（工具默认，可修改） |
+| [NVIDIA GeForce RTX 4090](https://www.nvidia.com/en-au/geforce/graphics-cards/40-series/rtx-4090/) | 24 GB | 1 个 GPU（单卡配置） |
 
-Atlas 800T A3 的 **16 × 64 GB 是软件可见逻辑设备口径**；[华为产品规格](https://e.huawei.com/cn/products/computing/ascend/atlas-800t-a3)的物理口径为 8 颗昇腾 910、8 × 128 GB HBM。本工具的 16 个 rank 设备不表示 16 颗物理处理器或 16 张物理卡，也未描述处理器内部互联。A2 的 8 设备布局另见[华为 MindCluster 节点说明](https://www.hiascend.com/document/detail/zh/mindcluster/60rc3/clustersched/reference/api/dlug_api_055.html)。RTX 4090 的每节点 8 设备是可编辑布局默认值，不是产品保证的服务器配置。
+Atlas 800T A3 的 **16 × 64 GB 是软件可见逻辑设备口径**；[华为产品规格](https://e.huawei.com/cn/products/computing/ascend/atlas-800t-a3)的物理口径为 8 颗昇腾 910、8 × 128 GB HBM。本工具的 16 个 rank 设备不表示 16 颗物理处理器或 16 张物理卡，也未描述处理器内部互联。A2 的节点数与各硬件配置的完整来源保存在 `hardware.js`。RTX 4090 使用单卡配置，节点布局可按实际主机修改。
 
-950DT 条目具体对应当前官方 Atlas 650E 的 **8 × 96 GB HBM** 配置，不能把整个 950DT 系列视作统一容量。[华为此前公开路线图](https://www.huawei.com/en/news/2025/9/hc-xu-keynote-speech)也描述过 144 GB 的 950DT 芯片规格；本预设没有把该规格套入 650E。**950Server 尚未核实到对应的独立官方型号与精确容量**，保留为待核实条目供手动设置；它不表示已确认等同 Atlas 650E，也不采用鲲鹏 / TaiShan 950 的 CPU 系统内存作为 NPU HBM。H20 选用 96 GB 版本，不混用其他可能的容量款型；每节点数量仍可按实际服务器修改。
+950DT 对应官方 Atlas 650E 的 **8 × 96 GB HBM** 配置，H20 对应 96 GB SXM5 的八卡参考节点；每节点数量仍可按实际服务器修改。
 
 **单位口径：**硬件预设把厂商标称 GB 数字近似填入本工具的 GiB 输入，未做十进制 / 二进制换算。容量输入按 `1024³` 字节计算，因此预设不是精确的可用显存测量；系统、驱动和框架也会预留内存，请按实际可用容量调整预算。
 
@@ -120,7 +119,7 @@ Ascend 模式还采用当前文档中 Embedding / LM Head 沿 `TP × PCP` 常驻
 
 - 权重按参数尺寸和所选数值精度估算，包含 Q / K / V / O、三矩阵 SwiGLU、Router、共享专家、LayerNorm，以及首级 Embedding 和末级未绑定 LM Head 的简化结构。模型特有的 bias、特殊投影、权重绑定及其他结构差异没有完整建模。
 - MLA 的持久 KV 使用 latent 维度估算，Attention 权重采用展开投影的近似模型，不能把它当作特定 MLA 模型的精确参数统计。
-- 混合 / 压缩 Attention 尚未支持的条目排除全部 Attention 权重和缓存 / 线性状态；界面显示部分估算，通信组也仅表示候选 ranks。层类型列表用于阅读模型结构，不会把这些异构层错误地按普通 GQA 计算。
+- 混合 / 压缩 Attention 尚未支持的条目排除全部 Attention 权重和缓存 / 线性状态；界面显示部分估算，不展示尚未建模的 Attention 通信。层类型列表用于阅读已核实的模型结构。
 - KV Cache 的精度独立于权重精度；将权重量化到 INT4 / INT8 不会自动把 KV Cache 改为相同精度。
 - 显存 / HBM 估算不含激活、算子工作区、框架预留、分配器碎片、padding、通信 buffer、量化元数据等完整开销。它用于比较布局，不是实际 OOM 预测。
 - 通信连线展示逻辑参与关系，不表示 NCCL / HCCL 在硬件上的实际路由、消息调度或物理连接。DP 副本不会因普通推理自动执行训练式梯度 AllReduce。

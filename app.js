@@ -21,6 +21,7 @@
   const modelFields = [['layers', '网络层数', 1, 256], ['moeLayers', 'MoE 层数', 0, 256], ['hiddenSize', 'Hidden size', 1, 65536], ['headDim', 'Head dim', 1, 1024], ['heads', 'Q 头数', 1, 512], ['kvHeads', 'KV 头数', 1, 512], ['experts', '路由专家数', 0, 2048], ['topK', '路由 Top-K', 0, 64]];
   const runtimeFields = [['sequenceLength', '序列长度', 1, 4194304], ['batchSize', '全局序列数', 1, 4096], ['gpusPerNode', '每节点设备数', 1, 512], ['memoryGB', '单卡容量 GiB', 1, 16384]];
   const advancedFields = [['intermediateSize', 'Dense FFN dim', 1, 262144], ['moeIntermediateSize', 'MoE FFN dim', 1, 262144], ['routedExpertHiddenSize', '路由专家 Hidden · 0=默认', 0, 65536], ['hashMoeLayers', '前置 Hash MoE 层', 0, 256], ['sharedExperts', '共享专家数', 0, 64], ['vocabSize', '词表大小', 1, 2000000], ['kvLoraRank', 'MLA latent dim', 1, 8192], ['qkRopeHeadDim', 'MLA RoPE dim', 0, 1024]];
+  const modelKeys = [...modelFields, ...advancedFields].map(([key]) => key).concat(['modelName', 'attentionType', 'moeLayerPlacement', 'precision', 'kvPrecision']);
   const initialModel = modelLibrary.find(m => m.name === 'GLM-5.3');
   const initialConfig = { ...E.DEFAULT_CONFIG, ...initialModel?.config, ...(initialModel ? { pp: 2, hardwareId: 'h200-141gb-sxm', memoryGB: 141 } : {}) };
   let config = { ...initialConfig }, result, selectedRank = 0, selectedGroup = null, selectedType = 'ALL', phase = 'prefill', view = 'topology', zoom = 1, layer = 0, baseline = null, toastTimer, updateTimer, latestSvg = '', svgSize = { width: 800, height: 500 };
@@ -79,14 +80,31 @@
     $('model-source').innerHTML = model ? `<a href="${esc(model.source)}" target="_blank" rel="noopener">${esc(model.organization)} · 官方 config.json ↗</a><p><b>${model.support === 'partial' ? '部分结构估算' : '投影结构近似'}</b> · ${esc(model.attentionDescription || model.architecture)}</p><p>${model.notes.map(esc).join(' ')}</p>` : '<p>选择公开模型自动填入结构；并行参数可继续独立调整。</p>';
     const hardware = hardwareLibrary.find(h=>h.id===config.hardwareId);
     $('hardware-select').value = hardware?.id || 'custom';
-    $('hardware-source').innerHTML = hardware ? `<a href="${esc(hardware.source)}" target="_blank" rel="noopener">${esc(hardware.vendor)} · ${hardware.status === 'unverified' ? '公开产品目录' : '规格来源'} ↗</a>${hardware.status === 'unverified' ? '<p><b>规格待核实 · 当前使用手动容量与节点预算</b></p>' : ''}<p>${hardware.notes.map(esc).join(' ')}</p>${hardware.status !== 'unverified' && (config.memoryGB!==hardware.memoryGB||config.gpusPerNode!==hardware.gpusPerNode)?'<p>当前容量或设备数已手动调整。</p>':''}` : '<p>选择硬件自动填入容量预算与节点设备数；可手动调整。</p>';
+    $('hardware-source').innerHTML = hardware ? `<a href="${esc(hardware.source)}" target="_blank" rel="noopener">${esc(hardware.vendor)} · 规格来源 ↗</a><p>${hardware.notes.map(esc).join(' ')}</p>${config.memoryGB!==hardware.memoryGB||config.gpusPerNode!==hardware.gpusPerNode?'<p>当前容量或设备数已手动调整。</p>':''}` : '<p>选择硬件自动填入容量预算与节点设备数；可手动调整。</p>';
+    updateFieldVisibility();
+  }
+  function updateFieldVisibility() {
+    const moe = config.moeLayers > 0 && config.experts > 0, model = currentModel();
+    const visibility = { intermediateSize: config.moeLayers < config.layers, moeIntermediateSize: moe, routedExpertHiddenSize: moe && (!model || Object.hasOwn(model.config, 'routedExpertHiddenSize')), hashMoeLayers: moe && (!model || Object.hasOwn(model.config, 'hashMoeLayers')), sharedExperts: moe, kvLoraRank: config.attentionType === 'mla', qkRopeHeadDim: config.attentionType === 'mla', heads: config.attentionType !== 'unmodeled', kvHeads: config.attentionType !== 'unmodeled', headDim: config.attentionType !== 'unmodeled', kvPrecision: config.attentionType !== 'unmodeled', moeLayerPlacement: moe && config.moeLayers < config.layers };
+    for (const [key, visible] of Object.entries(visibility)) {
+      const input = $(key), field = input.closest('#model-fields > div, #advanced-fields > div');
+      if (field) field.hidden = !visible;
+      else { input.hidden = !visible; document.querySelector(`label[for="${key}"]`).hidden = !visible; }
+      input.disabled = !visible;
+    }
   }
   function deviceLabel() { return hardwareLibrary.find(h=>h.id===config.hardwareId)?.vendor === 'Huawei' ? 'NPU' : 'GPU'; }
-  function currentModel() { const matches = modelLibrary.filter(m => Object.entries(m.config).filter(([k])=>!['precision','kvPrecision','modelName'].includes(k)).every(([k,v]) => config[k] === v)); return matches.find(m => m.config.modelName === config.modelName) || (matches.length === 1 ? matches[0] : undefined); }
+  function currentModel() { const matches = modelLibrary.filter(m => Object.entries(m.config).filter(([k])=>!['precision','kvPrecision','modelName'].includes(k)).every(([k,v]) => config[k] === v) && (!config.moeLayers || ['routedExpertHiddenSize', 'hashMoeLayers'].every(k => config[k] === (m.config[k] ?? E.DEFAULT_CONFIG[k])))); return matches.find(m => m.config.modelName === config.modelName) || (matches.length === 1 ? matches[0] : undefined); }
   function attentionLabel() { return currentModel()?.attentionLayers?.[layer] || (config.attentionType === 'unmodeled' ? '混合 ATTN' : config.attentionType.toUpperCase()); }
+  function portableConfig() {
+    const output = { ...config }, model = currentModel();
+    if (model) for (const key of modelKeys) if ($(key)?.disabled && !Object.hasOwn(model.config, key)) delete output[key];
+    return output;
+  }
   function readForm() {
     const next = {};
     for (const key of Object.keys(E.DEFAULT_CONFIG)) { const input = $(key); next[key] = input ? input.type === 'checkbox' ? input.checked : input.value : config[key]; }
+    next.hardwareId = $('hardware-select').value;
     return next;
   }
   function recompute() {
@@ -98,7 +116,7 @@
     $('layer-select').innerHTML = Array.from({ length: result.config?.layers || 1 }, (_, i) => `<option value="${i}">L${i}</option>`).join('');
     $('layer-select').value = layer;
     updatePresetLabel();
-    if (result.valid) { try { localStorage.setItem('parallel-atlas-config-v1', JSON.stringify(config)); } catch { /* Storage is optional. */ } }
+    if (result.valid) { try { localStorage.setItem('parallel-atlas-config-v1', JSON.stringify(portableConfig())); } catch { /* Storage is optional. */ } }
     renderAll();
   }
   function renderAll() {
@@ -114,20 +132,20 @@
     const metrics = [
       ['集群规模', '▦', result.valid ? result.worldSize : '—', 'DEVICES', result.valid ? `${s.nodes} 个节点 · 每节点 ${config.gpusPerNode} 个设备` : '等待有效配置'],
       [partial ? '单卡权重 · 已建模部分' : '单卡权重 · 最高', '▧', result.valid ? (s.weightsPerCardMax / GIB).toFixed(2) : '—', 'GiB', result.valid ? `最小 ${(s.weightsPerCardMin / GIB).toFixed(2)} GiB · ${config.precision.toUpperCase()}` : 'Attention + FFN + 其他权重'],
-      ['单卡 KV Cache · 最高', '▤', config.attentionType === 'unmodeled' ? '未计量' : result.valid ? (s.kvPerCardMax / GIB).toFixed(2) : '—', config.attentionType === 'unmodeled' ? '' : 'GiB', `${formatCount(config.sequenceLength)} tokens · ${config.kvPrecision.toUpperCase()}`],
+      ['单卡 KV Cache · 最高', '▤', config.attentionType === 'unmodeled' ? '未计量' : result.valid ? (s.kvPerCardMax / GIB).toFixed(2) : '—', config.attentionType === 'unmodeled' ? '' : 'GiB', config.attentionType === 'unmodeled' ? '缓存布局尚未建模' : `${formatCount(config.sequenceLength)} tokens · ${config.kvPrecision.toUpperCase()}`],
       [partial ? '部分占用 / 容量 · 最高' : '估算显存占比 · 最高', '◴', result.valid ? (s.memoryUtilizationMax * 100).toFixed(1) : '—', '%', partial ? '已建模部分 · 不能判断完整模型能否装入' : `权重 + KV / ${config.memoryGB} GiB · 不含工作区`]
     ];
     $('metrics').innerHTML = metrics.map(([label, icon, value, unit, detail]) => `<div class="metric"><div class="metric-label">${label}<span class="metric-icon">${icon}</span></div><div class="metric-value">${value}<small>${unit}</small></div><div class="metric-detail">${esc(detail)}</div></div>`).join('');
   }
   function renderValidation() {
-    $('validation').innerHTML = result.errors.length ? `<div class="validation-box error"><strong>参数组合需要调整</strong>${result.errors.map(e => `<p>${esc(e)}</p>`).join('')}</div>` : result.stats.partialEstimate ? `<div class="validation-box"><strong>当前为已建模部分的结构估算</strong><p>未计入：${result.stats.excludedModules.map(esc).join('、')}。数值不能用于判断完整模型是否装入显存${config.attentionType === 'unmodeled' ? '；Attention 相关通信仅展示候选逻辑组' : ''}。</p></div>` : '';
+    $('validation').innerHTML = result.errors.length ? `<div class="validation-box error"><strong>参数组合需要调整</strong>${result.errors.map(e => `<p>${esc(e)}</p>`).join('')}</div>` : result.stats.partialEstimate ? `<div class="validation-box"><strong>当前为已建模部分的结构估算</strong><p>未计入：${result.stats.excludedModules.map(esc).join('、')}。数值不能用于判断完整模型是否装入显存${config.attentionType === 'unmodeled' ? '；未建模的 Attention 通信不展示' : ''}。</p></div>` : '';
   }
   function visibleGroups() {
     if (!result.valid) return [];
-    return result.groups.filter(g => g.ranks.length > 1 && (g.active || g.type === 'DP') && (g.phase === 'both' || g.phase === phase) && (selectedType === 'ALL' || g.type === selectedType) && (!['EP', 'ETP'].includes(g.type) || g.ranks.some(r => result.cards[r].layers.moe.includes(layer))));
+    return result.groups.filter(g => g.modeled !== false && g.ranks.length > 1 && (g.active || g.type === 'DP') && (g.phase === 'both' || g.phase === phase) && (selectedType === 'ALL' || g.type === selectedType) && (!['EP', 'ETP'].includes(g.type) || g.ranks.some(r => result.cards[r].layers.moe.includes(layer))));
   }
   function renderFilters() {
-    const available = result.valid ? strategies.map(s => s[0]).filter(type => result.groups.some(g => g.type === type && g.ranks.length > 1 && (g.active || type === 'DP'))) : [];
+    const available = result.valid ? strategies.map(s => s[0]).filter(type => result.groups.some(g => g.modeled !== false && g.type === type && g.ranks.length > 1 && (g.active || type === 'DP'))) : [];
     if (selectedType !== 'ALL' && !available.includes(selectedType)) selectedType = 'ALL';
     $('group-filters').innerHTML = `<button class="filter-chip all ${selectedType === 'ALL' ? 'active' : ''}" style="--group-color:#8c75da" data-type="ALL">全部关系</button>` + available.map(type => `<button class="filter-chip ${selectedType === type ? 'active' : ''}" data-type="${type}" style="--group-color:${colors[type]}">${dot(type)}${type}</button>`).join('') + `<span class="muted small" style="margin-left:auto">○ 选卡查看详情</span>`;
   }
@@ -218,7 +236,7 @@
     const localExperts = new Set(activeMoE ? c.moe.experts : []), expertPage = Math.floor((c.moe.experts[0] || 0) / 64) * 64, shownExperts = Math.min(64, Math.max(0, config.experts - expertPage));
     const capacity = c.memory.capacity, memory = [['attention', 'Attention', '#67b9cf'], ['moe', '路由专家', '#e7b56f'], ['expertAdapters', 'LatentMoE 适配投影', '#d6a6b7'], ['shared', '共享专家', '#cdb58b'], ['dense', 'Dense FFN', '#b7a0d7'], ['embedding', 'Embedding / LM Head', '#c5bedc'], ['router', 'Router', '#a9c1b5'], ['norm', 'Norm', '#d1d1dd'], ['kv', 'KV Cache', '#8c78c5']];
     const model = currentModel();
-    const attentionContent = c.attention.modeled === false ? `<p class="inspector-note"><b>L${layer} · ${esc(attentionLabel())}</b><br>${esc(model?.attentionDescription || '此模型采用特殊 / 混合注意力。')}<br>Attention 权重、KV / 线性状态尚未计量。TP 仅表示候选逻辑分组，未假定普通 Q/K/V/O 矩阵切分。</p>` : `${['q', 'k', 'v', 'o'].map(k => { const t = c.attention.tensors[k]; return `<div class="tensor-row" title="${esc(t.shard)} · ${t.shape.join('×')} · 每层 ${formatBytes(t.bytes)}"><span class="tensor-name">W${k.toUpperCase()}</span><span class="tensor-bar">${Array.from({ length: Math.min(8, k === 'q' || k === 'o' ? c.attention.qHeads.length : c.attention.kvHeads.length) }, () => '<i></i>').join('')}</span><span class="tensor-detail">${t.shape[0]}×${t.shape[1]}</span></div>`; }).join('')}<p class="inspector-note">Q 头 ${esc(rangeText(c.attention.qHeads))} · KV 头 ${esc(rangeText(c.attention.kvHeads))}${c.attention.kvReplicated ? '（复制）' : ''}<br>${config.attentionType === 'mla' ? 'MLA 权重为展开投影近似。' : '矩阵形状为每层局部分片。'}${model?.attentionDescription ? '<br>' + esc(model.attentionDescription) : ''}</p>`;
+    const attentionContent = c.attention.modeled === false ? `<p class="inspector-note"><b>L${layer} · ${esc(attentionLabel())}</b><br>${esc(model?.attentionDescription || '此模型采用特殊 / 混合注意力。')}<br>Attention 权重、KV / 线性状态及通信尚未建模，此处不生成切分结果。</p>` : `${['q', 'k', 'v', 'o'].map(k => { const t = c.attention.tensors[k]; return `<div class="tensor-row" title="${esc(t.shard)} · ${t.shape.join('×')} · 每层 ${formatBytes(t.bytes)}"><span class="tensor-name">W${k.toUpperCase()}</span><span class="tensor-bar">${Array.from({ length: Math.min(8, k === 'q' || k === 'o' ? c.attention.qHeads.length : c.attention.kvHeads.length) }, () => '<i></i>').join('')}</span><span class="tensor-detail">${t.shape[0]}×${t.shape[1]}</span></div>`; }).join('')}<p class="inspector-note">Q 头 ${esc(rangeText(c.attention.qHeads))} · KV 头 ${esc(rangeText(c.attention.kvHeads))}${c.attention.kvReplicated ? '（复制）' : ''}<br>${config.attentionType === 'mla' ? 'MLA 权重为展开投影近似。' : '矩阵形状为每层局部分片。'}${model?.attentionDescription ? '<br>' + esc(model.attentionDescription) : ''}</p>`;
     let html = `<div class="inspector-body"><div class="inspector-identity"><div class="gpu-identity"><span class="gpu-symbol">▧</span><div><h3>${deviceLabel()} ${String(c.rank).padStart(2, '0')}</h3><small>NODE ${String(c.node).padStart(2, '0')} / LOCAL ${c.localRank}</small></div></div><span class="rank-badge">RANK ${c.rank}</span></div><div class="coords">${['tp', 'pp', 'dp', 'cp', 'pcp', 'dcp', 'ep', 'etp'].filter(k => config[k] > 1 || k === 'tp' || (k === 'etp' && c.moe.expertShards.count > 1)).map(k => `<span class="coord">${k.toUpperCase()} : ${c.coords[k]}</span>`).join('')}</div>
       <div class="inspector-section"><h4>${dot('TP')} Attention <small>L${c.layers.start}–L${c.layers.end}</small></h4>${attentionContent}</div>
       <div class="inspector-section"><h4>${dot('EP')} ${activeMoE ? 'MoE 专家分布' : 'FFN 分布'}<small>${inLayer ? activeMoE ? `TOP-${config.topK} / ${c.moe.experts.length} LOCAL` : 'DENSE LAYER' : '不持有当前层'}</small></h4>`;
@@ -226,15 +244,15 @@
     else html += `<p class="inspector-note">${inLayer ? '本层采用 Dense FFN，按 TP 切分中间维度。' : `当前 L${layer} 位于其他 PP 流水级。`}<br>本卡共有 ${c.layers.moe.length} 个 MoE 层、${c.layers.denseCount} 个 Dense 层。</p>`;
     if (activeMoE && c.moe.routedHiddenSize !== config.hiddenSize) html += `<p class="inspector-note">LatentMoE：路由专家 Hidden ${c.moe.routedHiddenSize}，共享专家 Hidden ${c.moe.sharedHiddenSize}。已计入双向适配投影。</p>`;
     if (activeMoE && c.moe.hashLayers?.includes(layer)) html += '<p class="inspector-note">本层使用 Hash Router；查找表占用未计量。</p>';
-    html += `</div><div class="inspector-section"><h4>${dot('PCP')} 上下文与 KV <small>${c.kv.modeled === false ? 'UNMODELED' : c.kv.precision.toUpperCase()}</small></h4><p class="inspector-note">${c.kv.modeled === false ? '仅按配置分配查询逻辑范围：' : 'Prefill 查询：'}${c.tokens.prefillStart}–${c.tokens.prefillEnd}<br>${c.kv.modeled === false ? '压缩 / 共享 KV 或线性状态未建模，不能以 0 占用解释。' : `KV token：${c.kv.tokens ? `${c.kv.start}–${c.kv.end}` : '无'}${c.kv.stride > 1 ? `，步长 ${c.kv.stride}` : ''}<br>本卡 ${formatCount(c.kv.tokens)} tokens / 序列 × ${c.kv.batch} 序列`}${config.sp ? '<br>SP 为候选激活分组，不额外切分权重。' : ''}</p></div>
+    html += `</div><div class="inspector-section"><h4>${dot('PCP')} 上下文与 KV <small>${c.kv.modeled === false ? 'UNMODELED' : c.kv.precision.toUpperCase()}</small></h4><p class="inspector-note">${c.kv.modeled === false ? '压缩 / 共享 KV 或线性状态尚未建模，不展示 token 切分与缓存布局。' : `Prefill 查询：${c.tokens.prefillStart}–${c.tokens.prefillEnd}<br>KV token：${c.kv.tokens ? `${c.kv.start}–${c.kv.end}` : '无'}${c.kv.stride > 1 ? `，步长 ${c.kv.stride}` : ''}<br>本卡 ${formatCount(c.kv.tokens)} tokens / 序列 × ${c.kv.batch} 序列${config.sp ? '<br>SP 切分激活，不额外切分权重。' : ''}`}</p></div>
       <div class="inspector-section"><h4>${c.partialEstimate ? '已建模部分构成' : '显存构成'} <small>ALL LOCAL LAYERS</small></h4><div class="memory-bar">${memory.map(([key,,color]) => `<span class="memory-segment" style="width:${Math.max(0, c.memory[key] / Math.max(capacity, c.memory.total) * 100)}%;background:${color}"></span>`).join('')}</div>${memory.filter(([key]) => c.memory[key] > 0).map(([key, label, color]) => `<div class="memory-key"><span><i class="color-dot" style="--group-color:${color}"></i>${label}</span><strong>${formatBytes(c.memory[key])}</strong></div>`).join('')}<div class="memory-total"><span>${c.partialEstimate ? '部分结构估算' : '权重 + KV'}</span><b>${formatBytes(c.memory.total)}</b></div><p class="inspector-note" style="margin-top:6px">${c.partialEstimate ? '未计量模块见上方提示，不能据此判断完整显存需求。' : '不含激活、工作区与通信缓冲。'}</p></div></div>`;
     $('card-inspector').innerHTML = html;
   }
   function renderInsights() {
     if (!result.valid) { $('insights').innerHTML = '<div class="insights"><p class="insight">参数通过校验后展示复制关系与容量洞察。</p></div>'; return; }
     const s = result.stats, entries = [];
-    if (config.ep > 1) entries.push(`${config.attentionType === 'unmodeled' ? '候选 Attention 逻辑组为' : 'Attention 按'} <strong>TP${config.tp}</strong>；专家按 <strong>EP${config.ep}</strong> 分配，两者复用设备。`);
-    entries.push(`${config.attentionType === 'unmodeled' ? 'Attention 仅展示候选分组，权重与缓存未计量' : `Attention 权重共 <strong>${s.attentionReplication} 份</strong>逻辑副本${config.attentionType === 'mla' ? '（投影近似）' : ''}`}；路由专家复制 ${s.expertReplication} 份。`);
+    if (config.ep > 1) entries.push(`${config.attentionType === 'unmodeled' ? '已建模 FFN 按' : 'Attention 按'} <strong>TP${config.tp}</strong>；专家按 <strong>EP${config.ep}</strong> 分配，两者复用设备。`);
+    entries.push(`${config.attentionType === 'unmodeled' ? 'Attention 权重、缓存与通信未展示' : `Attention 权重共 <strong>${s.attentionReplication} 份</strong>逻辑副本${config.attentionType === 'mla' ? '（投影近似）' : ''}`}；路由专家复制 ${s.expertReplication} 份。`);
     if (config.pcp > 1 && config.attentionType !== 'unmodeled') entries.push('<strong>PCP 切分计算</strong>，持久 KV 是否减少取决于 DCP。');
     if (config.dcp > 1 && config.attentionType !== 'unmodeled') entries.push(`<strong>DCP${config.dcp}</strong> 复用已有卡，将 KV 序列分为 ${config.dcp} 份。`);
     if (s.imbalance > .01) entries.push(`单卡总容量差异为 <strong>${(s.imbalance * 100).toFixed(1)}%</strong>，请检查层、专家和请求的均衡性。`);
@@ -301,8 +319,8 @@
     $('config-form').addEventListener('submit',e=>e.preventDefault());
     $('config-form').addEventListener('input',()=>{clearTimeout(updateTimer);updateTimer=setTimeout(recompute,180);});
     $('config-form').addEventListener('change',()=>{clearTimeout(updateTimer);recompute();});
-    $('model-select').addEventListener('change',e=>{const model=modelLibrary.find(m=>m.id===e.target.value);if(!model)return;config={...config,...model.config};selectedRank=0;layer=firstMoeLayer(config);fillForm(config);recompute();notify(`已载入 ${model.name} 的公开结构参数`);});
-    $('hardware-select').addEventListener('change',e=>{const hardware=hardwareLibrary.find(h=>h.id===e.target.value);config.hardwareId=hardware?.id||'custom';if(Number.isInteger(hardware?.memoryGB))config.memoryGB=hardware.memoryGB;if(Number.isInteger(hardware?.gpusPerNode))config.gpusPerNode=hardware.gpusPerNode;fillForm(config);recompute();notify(hardware?.status==='unverified'?'950Server 规格待核实，已保留当前容量与节点预算':hardware?`已载入 ${hardware.name} 的容量预算`:'已切换为自定义硬件');});
+    $('model-select').addEventListener('change',e=>{const model=modelLibrary.find(m=>m.id===e.target.value);if(!model)return;config={...config,...Object.fromEntries(modelKeys.map(key=>[key,E.DEFAULT_CONFIG[key]])),...model.config};selectedRank=0;layer=firstMoeLayer(config);fillForm(config);recompute();notify(`已载入 ${model.name} 的公开结构参数`);});
+    $('hardware-select').addEventListener('change',e=>{const hardware=hardwareLibrary.find(h=>h.id===e.target.value);config.hardwareId=hardware?.id||'custom';if(hardware){config.memoryGB=hardware.memoryGB;config.gpusPerNode=hardware.gpusPerNode;}fillForm(config);recompute();notify(hardware?`已载入 ${hardware.name} 的容量预算`:'已切换为自定义硬件');});
     $('preset-select').addEventListener('change',e=>{const p=E.PRESETS.find(p=>p.id===e.target.value);if(!p)return;config={...p.config};selectedRank=0;layer=firstMoeLayer(config);zoom=1;selectedType='ALL';fillForm(config);recompute();});
     $('reset-button').addEventListener('click',()=>{config={...initialConfig};selectedRank=0;layer=firstMoeLayer(config);zoom=1;selectedType='ALL';fillForm(config);recompute();notify('已恢复默认配置');});
     for(const id of ['guide-button','nav-guide','assumptions-button'])$(id).addEventListener('click',showGuide);
@@ -325,10 +343,10 @@
     $('download-button').addEventListener('click',()=>$('download-menu').hidden=!$('download-menu').hidden);
     document.addEventListener('click',e=>{if(!e.target.closest('.download-wrap'))$('download-menu').hidden=true;});
     document.querySelectorAll('[data-export]').forEach(b=>b.addEventListener('click',()=>exportImage(b.dataset.export)));
-    $('export-button').addEventListener('click',()=>{if(!result.valid){notify('请先修正配置参数');return;}downloadBlob(new Blob([JSON.stringify({schemaVersion:1,application:'parallel-atlas',config},null,2)],{type:'application/json'}),'parallel-atlas-config.json');notify('已导出 JSON 配置');});
+    $('export-button').addEventListener('click',()=>{if(!result.valid){notify('请先修正配置参数');return;}downloadBlob(new Blob([JSON.stringify({schemaVersion:1,application:'parallel-atlas',config:portableConfig()},null,2)],{type:'application/json'}),'parallel-atlas-config.json');notify('已导出 JSON 配置');});
     $('import-button').addEventListener('click',()=>$('import-file').click());
     $('import-file').addEventListener('change',async e=>{const file=e.target.files[0];if(!file)return;try{if(file.size>100000)throw new Error('配置文件不能超过 100 KB');const data=JSON.parse(await file.text());if(data.schemaVersion!==undefined&&data.schemaVersion!==1)throw new Error('不支持此配置版本');const candidate=E.analyze(Object.prototype.hasOwnProperty.call(data,'config')?data.config:data);if(!candidate.valid)throw new Error(candidate.errors.join('；'));config=candidate.config;selectedRank=0;layer=firstMoeLayer(config);selectedType='ALL';fillForm(config);recompute();notify('配置已导入');}catch(error){notify('导入失败：'+error.message);}finally{e.target.value='';}});
-    $('share-button').addEventListener('click',async()=>{if(!result.valid){notify('请先修正配置参数');return;}const bytes=new TextEncoder().encode(JSON.stringify(config));const hash=btoa(Array.from(bytes,b=>String.fromCharCode(b)).join(''));const url=location.href.split('#')[0]+'#config='+hash;try{await navigator.clipboard.writeText(url);notify('配置分享链接已复制');}catch{location.hash='config='+hash;notify('配置已写入地址栏，可复制链接分享');}});
+    $('share-button').addEventListener('click',async()=>{if(!result.valid){notify('请先修正配置参数');return;}const bytes=new TextEncoder().encode(JSON.stringify(portableConfig()));const hash=btoa(Array.from(bytes,b=>String.fromCharCode(b)).join(''));const url=location.href.split('#')[0]+'#config='+hash;try{await navigator.clipboard.writeText(url);notify('配置分享链接已复制');}catch{location.hash='config='+hash;notify('配置已写入地址栏，可复制链接分享');}});
     $('baseline-button').addEventListener('click',()=>{if(!result.valid)return;baseline=E.analyze(config);renderComparison();notify('当前配置已保存为对比基线');});
   }
   initializeForm();bindEvents();recompute();

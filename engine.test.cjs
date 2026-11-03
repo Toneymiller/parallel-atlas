@@ -201,6 +201,20 @@ test('invalid dimensions and unsupported framework combinations never create par
   }
 });
 
+test('unused Dense FFN dimensions do not restrict fully MoE models', () => {
+  for (const attentionType of ['gqa', 'unmodeled']) {
+    const config = baseline({ attentionType, moeLayers: DEFAULT_CONFIG.layers, intermediateSize: 3 });
+    const result = analyze(config);
+    assert.equal(result.valid, true, result.errors.join('; '));
+    assert.ok(result.cards.every(card => card.layers.denseCount === 0 && card.memory.dense === 0));
+    near(result.stats.totalWeightBytes, analyze({ ...config, intermediateSize: 4 }).stats.totalWeightBytes);
+    const withDense = analyze({ ...config, moeLayers: config.layers - 1 });
+    assert.equal(withDense.valid, false);
+    assert.ok(withDense.errors.some(error => error.includes('intermediateSize')));
+    assert.equal(withDense.cards.length, 0);
+  }
+});
+
 test('current Ascend PCP supports SP MoE and defaults to TP×PCP resident vocab shards', () => {
   const result = analyze(baseline({ profile: 'vllm-ascend', tp: 4, dp: 1, pcp: 2, ep: 8, sp: true, vocabSize: 32003 }));
   assert.equal(result.valid, true);
@@ -233,7 +247,7 @@ test('normalization rejects unsafe and malformed inputs and whitelists imported 
 });
 
 test('unmodeled modern attention reports only its modeled subset and never fake MLA or KV bytes', () => {
-  const result = analyze(baseline({ attentionType: 'unmodeled', kvHeads: 7, dcp: 2 }));
+  const result = analyze(baseline({ attentionType: 'unmodeled', kvHeads: 7, dcp: 2, sp: true }));
   assert.equal(result.valid, true, result.errors.join('; '));
   assert.equal(result.stats.partialEstimate, true);
   assert.equal(result.stats.estimateScope, 'modeled-subset');
@@ -255,14 +269,42 @@ test('unmodeled modern attention reports only its modeled subset and never fake 
     const sum = ['attention', 'moe', 'shared', 'dense', 'embedding', 'norm', 'router', 'expertAdapters'].reduce((sum, field) => sum + card.memory[field], 0);
     near(card.memory.weights, sum);
   }
-  for (const group of result.groups.filter(group => ['CP', 'PCP', 'DCP'].includes(group.type))) {
-    assert.equal(group.modeled, false);
-    assert.equal(group.collective, 'Unmodeled · group only');
+  assert.ok(result.groups.every(group => !['CP', 'PCP', 'DCP', 'SP'].includes(group.type)));
+  assert.ok(result.cards.every(card => ['CP', 'PCP', 'DCP', 'SP'].every(type => !(type in card.groups))));
+  for (const group of result.groups.filter(group => group.type === 'TP')) {
+    assert.match(group.description, /已计量的 Dense\/shared FFN/);
+    assert.match(group.description, /不表示 Attention 的切分或通信/);
+    assert.doesNotMatch(group.description, /候选/);
   }
+  assert.ok(result.assumptions.every(assumption => !assumption.includes('候选')));
   assert.equal(analyze(baseline({ attentionType: 'unmodeled', heads: 31 })).valid, false);
   const known = analyze(DEFAULT_CONFIG);
   assert.equal(known.stats.partialEstimate, false);
   assert.ok(known.stats.totalKVBytes > 0);
+});
+
+test('unknown attention omits context and sequence communication groups for every logical grid', () => {
+  const unknownTypes = ['CP', 'PCP', 'DCP', 'SP'];
+  for (const changes of [{ cp: 2, sp: true }, { pcp: 2, dcp: 2, sp: true }, { pcp: 2, dcp: 8, sp: true }]) {
+    const result = analyze(baseline({ attentionType: 'unmodeled', ...changes }));
+    assert.equal(result.valid, true, result.errors.join('; '));
+    assert.ok(result.groups.every(group => !unknownTypes.includes(group.type)));
+    assert.ok(result.cards.every(card => unknownTypes.every(type => !(type in card.groups))));
+    assert.ok(result.groups.some(group => group.type === 'TP' && group.active));
+    assert.ok(result.groups.some(group => group.type === 'EP' && group.active));
+  }
+  const invalid = analyze(baseline({ attentionType: 'unmodeled', pcp: 2, dcp: 4 }));
+  assert.equal(invalid.valid, false);
+  assert.ok(invalid.errors.includes('当前逻辑设备网格要求 DCP=PCP 或 DCP=PCP×TP。'));
+  for (const attentionType of ['gqa', 'mla']) {
+    const result = analyze(baseline({ attentionType, pcp: 2, dcp: 2, sp: true }));
+    assert.equal(result.valid, true, result.errors.join('; '));
+    for (const type of unknownTypes) assert.ok(result.groups.some(group => group.type === type));
+    for (const type of ['PCP', 'DCP', 'SP']) assert.ok(result.groups.some(group => group.type === type && group.active));
+    const cp = analyze(baseline({ attentionType, cp: 2 }));
+    assert.equal(cp.valid, true, cp.errors.join('; '));
+    assert.ok(cp.groups.some(group => group.type === 'CP' && group.active));
+  }
 });
 
 test('LatentMoE routes through smaller expert hidden dimension while preserving shared experts', () => {
@@ -289,14 +331,21 @@ test('LatentMoE routes through smaller expert hidden dimension while preserving 
   assert.throws(() => normalizeConfig({ routedExpertHiddenSize: 65537 }));
 });
 
-test('Hash MoE skips only the first N MoE routers across PP and leaves hash tables explicitly excluded', () => {
+test('Hash MoE preserves every gate matrix across PP while only lookup tables remain excluded', () => {
   const config = baseline({ attentionType: 'unmodeled', layers: 8, moeLayers: 5, moeLayerPlacement: 'trailing', hashMoeLayers: 3, tp: 1, pp: 4, dp: 1, ep: 1, etp: 1 });
   const hashed = analyze(config), standard = analyze({ ...config, hashMoeLayers: 0 });
   assert.equal(hashed.valid, true);
   assert.deepEqual(hashed.cards.flatMap(card => card.moe.hashLayers), [3, 4, 5]);
-  near(standard.stats.uniqueWeightBytes - hashed.stats.uniqueWeightBytes, 3 * config.hiddenSize * config.experts * 2);
+  near(hashed.stats.uniqueWeightBytes, standard.stats.uniqueWeightBytes);
+  near(hashed.stats.totalWeightBytes, standard.stats.totalWeightBytes);
+  for (const card of hashed.cards) {
+    near(card.memory.router, card.layers.moe.length * config.hiddenSize * config.experts * 2);
+    near(card.memory.router, standard.cards[card.rank].memory.router);
+  }
   near(hashed.stats.totalWeightBytes, hashed.stats.uniqueWeightBytes);
   assert.ok(hashed.stats.excludedModules.includes('Hash Router 查找表'));
+  assert.ok(hashed.warnings.some(warning => warning.includes('仍保留 hidden×experts Router 矩阵')));
+  assert.ok(hashed.assumptions.some(assumption => assumption.includes('所有 MoE 层均计入该矩阵')));
   const knownAttention = analyze({ ...config, attentionType: 'gqa' });
   assert.equal(knownAttention.stats.partialEstimate, true);
   assert.ok(knownAttention.stats.totalKVBytes > 0);

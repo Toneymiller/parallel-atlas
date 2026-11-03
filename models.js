@@ -8,10 +8,6 @@
   'use strict';
 
   const SNAPSHOT_DATE = '2026-11-03';
-  // These dormant fields satisfy the simulator schema. They describe no MLA
-  // dimensions in GQA models, and do not participate in their memory estimates.
-  const inactiveMLA = { kvLoraRank: 512, qkRopeHeadDim: 64 };
-  const gqaNote = 'GQA 模型中的 MLA latent / RoPE 字段仅为未启用的界面默认值，不参与此模型估算。';
   const approximationNote = '结构参数来自官方配置；容量仍采用本工具简化结构，不含 checkpoint 文件大小、激活、工作区及全部模型专有参数。';
 
   const LEGACY_MODELS = [
@@ -23,10 +19,9 @@
         modelName: 'Qwen3-8B', attentionType: 'gqa', layers: 36, hiddenSize: 4096,
         heads: 32, kvHeads: 8, headDim: 128, intermediateSize: 12288,
         experts: 0, topK: 0, moeLayers: 0, sharedExperts: 0,
-        moeIntermediateSize: 12288, moeLayerPlacement: 'uniform', vocabSize: 151936,
-        precision: 'bf16', kvPrecision: 'bf16', ...inactiveMLA
+        moeLayerPlacement: 'uniform', vocabSize: 151936
       },
-      notes: ['Dense 模型；所有专家相关数量均关闭，未启用的专家 FFN dim 沿用 Dense FFN dim。', gqaNote, approximationNote]
+      notes: ['Dense 模型，没有 MoE 专家。', approximationNote]
     },
     {
       id: 'qwen3-32b', name: 'Qwen3-32B', organization: 'Qwen', architecture: 'Qwen3ForCausalLM',
@@ -36,10 +31,9 @@
         modelName: 'Qwen3-32B', attentionType: 'gqa', layers: 64, hiddenSize: 5120,
         heads: 64, kvHeads: 8, headDim: 128, intermediateSize: 25600,
         experts: 0, topK: 0, moeLayers: 0, sharedExperts: 0,
-        moeIntermediateSize: 25600, moeLayerPlacement: 'uniform', vocabSize: 151936,
-        precision: 'bf16', kvPrecision: 'bf16', ...inactiveMLA
+        moeLayerPlacement: 'uniform', vocabSize: 151936
       },
-      notes: ['官方 head_dim=128；Q 投影维度不等于 hidden_size，不能用 hidden_size / heads 替代。Dense 模型没有 MoE，专家 FFN dim 为未启用的 Dense 同值占位。', gqaNote, approximationNote]
+      notes: ['官方 head_dim=128；Q 投影维度不等于 hidden_size，不能用 hidden_size / heads 替代。Dense 模型没有 MoE。', approximationNote]
     },
     {
       id: 'qwen3-30b-a3b', name: 'Qwen3-30B-A3B', organization: 'Qwen', architecture: 'Qwen3MoeForCausalLM',
@@ -49,10 +43,9 @@
         modelName: 'Qwen3-30B-A3B', attentionType: 'gqa', layers: 48, hiddenSize: 2048,
         heads: 32, kvHeads: 4, headDim: 128, intermediateSize: 6144,
         experts: 128, topK: 8, moeLayers: 48, sharedExperts: 0,
-        moeIntermediateSize: 768, moeLayerPlacement: 'uniform', vocabSize: 151936,
-        precision: 'bf16', kvPrecision: 'bf16', ...inactiveMLA
+        moeIntermediateSize: 768, moeLayerPlacement: 'uniform', vocabSize: 151936
       },
-      notes: ['decoder_sparse_step=1 且 mlp_only_layers 为空：48 个 Transformer 层均为 MoE；没有共享专家。', '官方 head_dim=128，Q 投影维度与 hidden_size 不同。', gqaNote, approximationNote]
+      notes: ['decoder_sparse_step=1 且 mlp_only_layers 为空：48 个 Transformer 层均为 MoE；没有共享专家。', '官方 head_dim=128，Q 投影维度与 hidden_size 不同。', approximationNote]
     },
     {
       id: 'qwen3-235b-a22b', name: 'Qwen3-235B-A22B', organization: 'Qwen', architecture: 'Qwen3MoeForCausalLM',
@@ -62,10 +55,9 @@
         modelName: 'Qwen3-235B-A22B', attentionType: 'gqa', layers: 94, hiddenSize: 4096,
         heads: 64, kvHeads: 4, headDim: 128, intermediateSize: 12288,
         experts: 128, topK: 8, moeLayers: 94, sharedExperts: 0,
-        moeIntermediateSize: 1536, moeLayerPlacement: 'uniform', vocabSize: 151936,
-        precision: 'bf16', kvPrecision: 'bf16', ...inactiveMLA
+        moeIntermediateSize: 1536, moeLayerPlacement: 'uniform', vocabSize: 151936
       },
-      notes: ['decoder_sparse_step=1 且 mlp_only_layers 为空：94 个 Transformer 层均为 MoE；没有共享专家。', '官方 head_dim=128，Q 投影维度与 hidden_size 不同。', gqaNote, approximationNote]
+      notes: ['decoder_sparse_step=1 且 mlp_only_layers 为空：94 个 Transformer 层均为 MoE；没有共享专家。', '官方 head_dim=128，Q 投影维度与 hidden_size 不同。', approximationNote]
     },
     {
       id: 'deepseek-v3', name: 'DeepSeek-V3', organization: 'deepseek-ai', architecture: 'DeepseekV3ForCausalLM',
@@ -76,7 +68,7 @@
         heads: 128, kvHeads: 128, headDim: 192, intermediateSize: 18432,
         experts: 256, topK: 8, moeLayers: 58, sharedExperts: 1,
         moeIntermediateSize: 2048, moeLayerPlacement: 'trailing', vocabSize: 129280,
-        precision: 'bf16', kvPrecision: 'bf16', kvLoraRank: 512, qkRopeHeadDim: 64
+        kvLoraRank: 512, qkRopeHeadDim: 64
       },
       notes: [
         'first_k_dense_replace=3、moe_layer_freq=1：L0–L2 为 Dense，L3–L60 共 58 个 MoE 层；每层 256 个路由专家、1 个共享专家。',
@@ -93,13 +85,12 @@
         modelName: 'GLM-4.5', attentionType: 'gqa', layers: 92, hiddenSize: 5120,
         heads: 96, kvHeads: 8, headDim: 128, intermediateSize: 12288,
         experts: 160, topK: 8, moeLayers: 89, sharedExperts: 1,
-        moeIntermediateSize: 1536, moeLayerPlacement: 'trailing', vocabSize: 151552,
-        precision: 'bf16', kvPrecision: 'bf16', ...inactiveMLA
+        moeIntermediateSize: 1536, moeLayerPlacement: 'trailing', vocabSize: 151552
       },
       notes: [
         'first_k_dense_replace=3：L0–L2 为 Dense，L3–L91 共 89 个 MoE 层；每层 160 个路由专家、1 个共享专家。',
         '官方 head_dim=128、Q heads=96；Q 投影维度与 hidden_size 不同。Attention bias、QK norm 与额外 MTP 层未完整计入容量。',
-        gqaNote, approximationNote
+        approximationNote
       ]
     }
   ];
@@ -110,21 +101,20 @@
     heads: 64, kvHeads: 64, headDim: 256, intermediateSize: 12288,
     experts: 256, topK: 8, moeLayers: 75, sharedExperts: 1,
     moeIntermediateSize: 2048, moeLayerPlacement: 'trailing', vocabSize: 154880,
-    precision: 'bf16', kvPrecision: 'bf16', kvLoraRank: 512, qkRopeHeadDim: 64
+    kvLoraRank: 512, qkRopeHeadDim: 64
   });
   const deepseekV4 = (name, layers, hiddenSize, heads, experts, moeIntermediateSize) => ({
     modelName: name, attentionType: 'unmodeled', layers, hiddenSize,
-    heads, kvHeads: 1, headDim: 512, intermediateSize: moeIntermediateSize,
+    heads, kvHeads: 1, headDim: 512,
     experts, topK: 6, moeLayers: layers, sharedExperts: 1,
     moeIntermediateSize, moeLayerPlacement: 'trailing', vocabSize: 129280,
-    precision: 'bf16', kvPrecision: 'bf16', ...inactiveMLA
+    qkRopeHeadDim: 64
   });
   const miniMax = (name, attentionType) => ({
     modelName: name, attentionType, layers: 60, hiddenSize: 6144,
     heads: 64, kvHeads: 4, headDim: 128, intermediateSize: 12288,
     experts: 128, topK: 4, moeLayers: 57, sharedExperts: 1,
-    moeIntermediateSize: 3072, moeLayerPlacement: 'trailing', vocabSize: 200064,
-    precision: 'bf16', kvPrecision: 'bf16', ...inactiveMLA
+    moeIntermediateSize: 3072, moeLayerPlacement: 'trailing', vocabSize: 200064
   });
   const CURRENT_MODELS = [
     {
@@ -159,7 +149,7 @@
         heads: 64, kvHeads: 64, headDim: 256, intermediateSize: 12288,
         experts: 288, topK: 8, moeLayers: 42, sharedExperts: 1,
         moeIntermediateSize: 2048, moeLayerPlacement: 'trailing', vocabSize: 154880,
-        precision: 'bf16', kvPrecision: 'bf16', kvLoraRank: 512, qkRopeHeadDim: 0
+        kvLoraRank: 512, qkRopeHeadDim: 0
       },
       notes: [
         '读取官方 text_config：45 个语言主干层，前三层 Dense，42 层 MoE；288 个路由专家、Top-8、1 个共享专家。',
@@ -176,7 +166,6 @@
       notes: [
         '43 个主干层均为 MoE：256 路由专家、Top-6、1 个共享专家；前 3 个 MoE 层采用静态 token→expert Hash Router，EP 只展示逻辑专家分配。',
         '滑动窗口为 128；主干压缩比例为 0、0，随后 4 / 128 交替。压缩注意力、低秩投影、索引器、mHC 和 DSpark / 额外草稿模块未计入。',
-        '官方未给 intermediate_size 或 kv_lora_rank：Dense FFN dim 以专家 FFN dim 作未启用占位，latent=512 仅为未启用的界面默认值。所有层均为 MoE，且 Attention / KV 不参与容量统计。',
         '发布 checkpoint 为 FP4 专家与 FP8 等混合位宽；BF16 是可调整分析起点。', partialNote
       ]
     },
@@ -187,9 +176,8 @@
       attentionLayers: Array.from({ length: 61 }, (_, i) => i < 2 || i % 2 ? 'HCA×128' : 'CSA×4'),
       config: { ...deepseekV4('DeepSeek-V4-Pro', 61, 7168, 128, 384, 3072), hashMoeLayers: 3 },
       notes: [
-        '61 个主干层均为 MoE：384 路由专家、Top-6、1 个共享专家；前 3 个 MoE 层为 Hash Router，不计常规 Dense Router 矩阵，Hash 表占用尚未建模。',
-        '滑动窗口为 128；前两层压缩比例为 128，随后 4 / 128 交替。压缩注意力、低秩投影、索引器、mHC 与额外草稿 / DSpark 模块未计入。',
-        '官方未给 intermediate_size 或 kv_lora_rank；对应 Dense FFN / latent 字段为未启用的界面占位，不代表官方结构。',
+        '61 个主干层均为 MoE：384 路由专家、Top-6、1 个共享专家；前 3 个 MoE 层通过 Hash Router 选择专家，仍保留路由评分矩阵，Hash 查找表占用尚未建模。',
+        '滑动窗口为 128；前两层压缩比例为 128，随后 4 / 128 交替。压缩注意力、低秩投影、索引器、mHC 与额外 MTP 层未计入。',
         '官方混合量化 checkpoint 的占用不等于本工具 BF16 起点。', partialNote
       ]
     },
@@ -203,7 +191,7 @@
         '读取官方 text_config：40 个语言主干层均为 MoE，384 路由专家、Top-6、1 个共享专家。该配置未声明 num_hash_layers，不能套用 V4 的前三层 Hash Router。',
         'CED 的 20 个编码层 + 20 个解码层采用跨层 KV / 索引共享；不能按普通逐层 GQA / MLA 计算缓存。',
         'Engram 条件记忆（官方约 196B 参数）、视觉编码器、mHC、压缩注意力及草稿 / DSpark 模块均未计入，因此这里只显示语言主干中已建模的部分。',
-        'intermediate_size / kv_lora_rank 未在官方主干配置给出，界面值为未启用占位；BF16 只是可调分析起点。', partialNote
+        'BF16 只是可调分析起点。', partialNote
       ]
     },
     {
@@ -216,7 +204,7 @@
         heads: 96, kvHeads: 96, headDim: 192, intermediateSize: 33792,
         experts: 896, topK: 16, moeLayers: 92, sharedExperts: 2,
         moeIntermediateSize: 3072, routedExpertHiddenSize: 3584, moeLayerPlacement: 'trailing', vocabSize: 163840,
-        precision: 'bf16', kvPrecision: 'bf16', kvLoraRank: 512, qkRopeHeadDim: 64
+        kvLoraRank: 512, qkRopeHeadDim: 64
       },
       notes: [
         '官方 text_config 为 93 层，L0 Dense，L1–L92 为 92 个 MoE 层；896 路由专家、Top-16、2 个共享专家。',
@@ -234,7 +222,7 @@
       notes: [
         '官方 text_config 为 60 层，前三层 FFN Dense，57 层 MoE；128 路由专家、Top-4、1 个共享专家。dense_intermediate_size=12288，专家与共享 FFN dim=3072。',
         'MSA 稀疏 Attention 用 GQA Q/K/V/O 投影代理；未计入稀疏索引器，缓存按完整 GQA 序列估算，不能当作 MSA 的真实缓存布局。',
-        '视觉编码器、MTP / next-token 模块、QK norm 和模型专有结构未完整计入；BF16 是可调整分析起点。', gqaNote, approximationNote
+        '视觉编码器、MTP / next-token 模块、QK norm 和模型专有结构未完整计入；BF16 是可调整分析起点。', approximationNote
       ]
     },
     {
@@ -246,7 +234,7 @@
       notes: [
         '2026-10-19 正式发布。官方 text_config 为 60 层，所有层均为稀疏 Attention；前三层 FFN 仍为 Dense，其余 57 层 MoE。128 路由专家、Top-4、1 个共享专家。',
         '原生视觉 / 视频、DSpark、稀疏索引器和 Attention 状态尚未建模；不能将 MiniMax-M3 的前三层普通 Attention 布局直接套用。',
-        '官方 NVFP4 专家与 MXFP8 Attention 等混合量化不由本工具 BF16 起点复现；MLA latent 字段是未启用的界面占位。', partialNote
+        '官方配置声明 MXFP8 量化，BF16 分析起点不复现发布 checkpoint 的实际占用。', partialNote
       ]
     }
   ];
@@ -256,7 +244,7 @@
     ...LEGACY_MODELS.map(model => ({ generation: 'legacy', support: 'projection-proxy', attentionDescription: model.config.attentionType === 'mla' ? 'MLA：展开投影近似' : 'GQA：统一 Q/K/V/O 投影模型', ...model }))
   ].map(model => Object.freeze({
     ...model,
-    config: Object.freeze({ routedExpertHiddenSize: 0, hashMoeLayers: 0, ...model.config }),
+    config: Object.freeze({ ...model.config }),
     ...(model.attentionLayers ? { attentionLayers: Object.freeze(model.attentionLayers) } : {}),
     notes: Object.freeze(model.notes)
   }));

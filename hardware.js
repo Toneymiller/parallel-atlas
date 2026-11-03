@@ -1,4 +1,4 @@
-/* Dated hardware references; unverified entries never supply invented capacities. No live requests. */
+/* Dated hardware references with sourced capacities and configurations. No live requests. */
 (function (root, factory) {
   'use strict';
   const api = factory();
@@ -17,7 +17,7 @@
       source: 'https://www.hiascend.com/doc_center/source/zh/HDK/2610/A2/A2DCMI/dcmi_050.html',
       sources: [
         { title: '华为 DCMI：Atlas 800T A2 单芯片 HBM 容量 64G', url: 'https://www.hiascend.com/doc_center/source/zh/HDK/2610/A2/A2DCMI/dcmi_050.html' },
-        { title: '华为 MindCluster：Atlas 800T A2 单机 1–8 个 NPU', url: 'https://www.hiascend.com/document/detail/zh/mindcluster/60rc3/clustersched/reference/api/dlug_api_055.html' },
+        { title: '华为 MindCluster 26.0.0：Atlas 800T A2 单机 1–8 个 NPU', url: 'https://www.hiascend.com/document/detail/en/mindcluster/2600/clustersched/schedulingug/docs/en/scheduling/appendix.md' },
         { title: 'vLLM-Ascend：Atlas A2 / Ascend-cann-kernels-910b 产品系列', url: 'https://docs.vllm.ai/projects/ascend/en/v0.13.0/faqs.html' }
       ],
       notes: [
@@ -49,25 +49,17 @@
       notes: [
         '选用 Atlas 650E 已公开的具体版本：单机 8 颗昇腾950DT、8 × 96 GB HBM，总计 768 GB；每节点按 8 个容量单元建模。',
         '该映射未推断虚拟化或软件设备拆分；若实际逻辑设备数和每设备容量不同，请按 npu-smi 结果修改。',
-        '950DT 存在不同产品规格；此处 96 GB 不等同于早期芯片路线图的 144 GB，不应套用到所有 950DT 系统。',
         nominalCapacityNote
-      ]
-    },
-    {
-      id: 'ascend-950server', name: 'Huawei 950Server · 规格待核实', vendor: 'Huawei',
-      memoryGB: null, gpusPerNode: null, unitLabel: 'NPU 逻辑设备（待核实）', status: 'unverified', budgetOnly: true,
-      source: 'https://www.hiascend.com/hardware/ai-server',
-      sources: [{ title: '华为公开服务器目录：Atlas 650E 等正式产品名称', url: 'https://www.hiascend.com/hardware/ai-server' }],
-      notes: [
-        '950Server 对应的正式产品型号、单逻辑设备容量与节点设备数尚待核实；选择后保留当前自定义容量与节点预算，请按实机修改。',
-        'Atlas 650E 的公开 8 × 96 GB HBM 配置可选择 Ascend 950DT · Atlas 650E 条目。'
       ]
     },
     {
       id: 'a100-80gb-sxm', name: 'NVIDIA A100 SXM · 80 GB', vendor: 'NVIDIA',
       memoryGB: 80, gpusPerNode: 8, unitLabel: 'GPU',
       source: 'https://www.nvidia.com/en-gb/data-center/a100/',
-      sources: [{ title: 'NVIDIA A100：80 GB SXM 与 DGX A100 的 8-GPU 配置', url: 'https://www.nvidia.com/en-gb/data-center/a100/' }],
+      sources: [
+        { title: 'NVIDIA A100：80 GB SXM 产品规格', url: 'https://www.nvidia.com/en-gb/data-center/a100/' },
+        { title: 'NVIDIA DGX A100：8 GPU、640 GB 总显存的配置', url: 'https://docs.nvidia.com/dgx/dgxa100-user-guide/introduction-to-dgxa100.html' }
+      ],
       notes: ['选用 80 GB HBM2e 的 SXM 版本，节点按 DGX A100 的 8 GPU 配置预设，可按实际系统修改。', nominalCapacityNote]
     },
     {
@@ -85,7 +77,6 @@
       ],
       notes: [
         '选用 H20 SXM5 96 GB 版本；单机按 Dell PowerEdge XE9680 官方列出的 8 GPU 配置预设，可按实际系统修改。',
-        'H20 也有其他容量版本；此处明确为 96 GB 版本，不与 H200 或其他 H20 版本混用。',
         nominalCapacityNote
       ]
     },
@@ -100,11 +91,11 @@
       notes: ['选用 B200 SXM 的 180 GB HBM3e 版本；节点采用官方 HGX 8-GPU 参考配置，可按实际系统修改。', nominalCapacityNote]
     },
     {
-      id: 'rtx-4090-24gb', name: 'NVIDIA GeForce RTX 4090 · 24 GB', vendor: 'NVIDIA',
-      memoryGB: 24, gpusPerNode: 8, unitLabel: 'GPU',
+      id: 'rtx-4090-24gb', name: 'NVIDIA GeForce RTX 4090 · 24 GB · 单卡', vendor: 'NVIDIA',
+      memoryGB: 24, gpusPerNode: 1, unitLabel: 'GPU',
       source: 'https://www.nvidia.com/en-au/geforce/graphics-cards/40-series/rtx-4090/',
       sources: [{ title: 'NVIDIA GeForce RTX 4090：24 GB GDDR6X', url: 'https://www.nvidia.com/en-au/geforce/graphics-cards/40-series/rtx-4090/' }],
-      notes: ['选用标准 24 GB GDDR6X 版本。每节点 8 个 GPU 是本工具的可编辑布局默认值，非 RTX 4090 产品规格；请按实际主机修改。', nominalCapacityNote]
+      notes: ['选用标准 24 GB GDDR6X 单卡配置，每节点 1 个 GPU；多个 GPU 的主机布局请按实际配置自行填写。', nominalCapacityNote]
     }
   ];
 

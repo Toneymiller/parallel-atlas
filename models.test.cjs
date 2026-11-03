@@ -33,7 +33,8 @@ test('each model has dated official source provenance and immutable model-only f
     assert.ok(Object.isFrozen(model) && Object.isFrozen(model.config) && Object.isFrozen(model.notes));
     assert.ok(Object.keys(model.config).every(key => modelFields.has(key)));
     assert.ok(Object.keys(model.config).every(key => Object.prototype.hasOwnProperty.call(E.DEFAULT_CONFIG, key)), `${model.id} contains an unsupported engine field`);
-    assert.equal(model.config.precision, 'bf16');
+    assert.equal(Object.hasOwn(model.config, 'precision'), false);
+    assert.equal(Object.hasOwn(model.config, 'kvPrecision'), false);
   }
   assert.equal(ids.size, 15);
   assert.equal(C.MODELS.filter(m => m.generation === 'current').length, 9);
@@ -47,6 +48,8 @@ test('all catalog structures normalize and produce finite layouts with an indepe
     assert.equal(result.valid, true, `${model.id}: ${result.errors.join('; ')}`);
     assert.equal(result.cards.length, 1);
     assert.equal(result.config.moeLayerPlacement, model.config.moeLayerPlacement);
+    assert.equal(result.config.precision, E.DEFAULT_CONFIG.precision);
+    assert.equal(result.config.kvPrecision, E.DEFAULT_CONFIG.kvPrecision);
     assert.ok(Number.isFinite(result.stats.memoryPerCardMax));
     assert.equal(result.cards[0].layers.moe.length, model.config.moeLayers);
   }
@@ -56,10 +59,30 @@ test('Dense catalog entries cannot retain phantom MoE parameters', () => {
   for (const id of ['qwen3-8b', 'qwen3-32b']) {
     const c = C.getModel(id).config;
     for (const key of ['experts', 'topK', 'moeLayers', 'sharedExperts']) assert.equal(c[key], 0);
+    assert.equal(Object.hasOwn(c, 'moeIntermediateSize'), false);
     const result = E.analyze({ ...E.DEFAULT_CONFIG, ...c, tp: 4, dp: 1, ep: 1, etp: 1 });
     assert.equal(result.valid, true);
     assert.ok(result.cards.every(card => card.memory.moe === 0 && card.memory.shared === 0 && card.memory.router === 0));
   }
+});
+
+test('catalog omits inactive or unavailable dimensions instead of attributing engine defaults to official models', () => {
+  for (const model of C.MODELS) {
+    assert.equal(Object.hasOwn(model.config, 'routedExpertHiddenSize'), model.id === 'kimi-k3', model.id);
+    assert.equal(Object.hasOwn(model.config, 'hashMoeLayers'), ['deepseek-v4-flash-0731', 'deepseek-v4-pro'].includes(model.id), model.id);
+  }
+  for (const model of C.MODELS.filter(m => m.config.attentionType === 'gqa')) {
+    assert.equal(Object.hasOwn(model.config, 'kvLoraRank'), false, model.id);
+    assert.equal(Object.hasOwn(model.config, 'qkRopeHeadDim'), false, model.id);
+  }
+  for (const id of ['deepseek-v4-flash-0731', 'deepseek-v4-pro', 'deepseek-v4.1-flash-1017']) {
+    const model = C.getModel(id);
+    assert.equal(Object.hasOwn(model.config, 'intermediateSize'), false, id);
+    assert.equal(Object.hasOwn(model.config, 'kvLoraRank'), false, id);
+    assert.equal(model.config.qkRopeHeadDim, 64);
+    assert.ok(model.notes.every(note => !note.includes('占位')));
+  }
+  assert.equal(Object.hasOwn(C.getModel('minimax-m3.1-flash').config, 'kvLoraRank'), false);
 });
 
 test('Qwen source dimensions preserve explicit head_dim rather than hidden_size / heads', () => {
@@ -171,7 +194,8 @@ test('DeepSeek V4 has all-MoE backbones and only V4 has source-confirmed Hash Ro
   ];
   for (const [id, layers, hidden, heads, experts, dim, hash] of expected) {
     const c = C.getModel(id).config;
-    assert.deepEqual([c.layers, c.moeLayers, c.hiddenSize, c.heads, c.experts, c.moeIntermediateSize, c.hashMoeLayers, c.topK, c.sharedExperts], [layers, layers, hidden, heads, experts, dim, hash, 6, 1]);
+    assert.deepEqual([c.layers, c.moeLayers, c.hiddenSize, c.heads, c.experts, c.moeIntermediateSize, c.hashMoeLayers ?? 0, c.topK, c.sharedExperts], [layers, layers, hidden, heads, experts, dim, hash, 6, 1]);
+    assert.equal(c.kvHeads, 1);
     const r = E.analyze({ ...E.DEFAULT_CONFIG, ...c, tp: 1, dp: 1, ep: 1, etp: 1, pp: 2 });
     assert.equal(r.valid, true);
     assert.equal(r.cards.reduce((n, card) => n + card.layers.denseCount, 0), 0);
@@ -206,4 +230,6 @@ test('MiniMax releases retain separate Dense FFN dimensions and distinct sparse-
   assert.ok(newer.attentionLayers.every(t => t === 'MSA'));
   assert.equal(newer.releasedAt, '2026-10-19');
   assert.equal(new URL(newer.releaseSource).hostname, 'www.minimax.io');
+  assert.ok(newer.notes.some(note => note.includes('MXFP8')));
+  assert.ok(newer.notes.every(note => !note.includes('NVFP4')));
 });
